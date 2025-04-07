@@ -1,0 +1,28 @@
+{
+    "driver": "./chromedriver",
+    "arguments": [
+        "--no-sandbox", 
+        "--disable-setuid-sandbox", 
+        "--remote-debugging-port=9222", 
+        "--disable-dev-shm-using", 
+        "--disable-extensions", 
+        "--disable-gpu", 
+        "--disable-blink-features=AutomationControlled",
+        "--remote-allow-origins=*",
+        "--disable-infobars",
+        "--user-data-dir=/root/snap/chromium/common/chromium/Default"
+    ],
+    "react": { 
+        "width": 400, 
+        "height": 800,
+        "hide": false
+    },
+    "DevToolsCommands": [
+        {
+            "name": "Page.addScriptToEvaluateOnNewDocument",
+            "params": {
+                "source": "delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;"
+            }
+        }
+    ]
+}

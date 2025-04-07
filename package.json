@@ -1,0 +1,22 @@
+{
+    "name": "cs-trading",
+    "version": "2.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "node index.js"
+    },
+    "author": "Stanevko Ilya",
+    "license": "ISC",
+    "dependencies": {
+        "body-parser": "^1.20.2",
+        "cheerio": "^1.0.0",
+        "clone": "^2.1.2",
+        "express": "^4.18.2",
+        "mongoose": "^8.0.3",
+        "ora": "5.0.0",
+        "request-promise": "^4.2.6",
+        "selenium-webdriver": "^4.30.0",
+        "socket.io": "^4.7.5"
+    }
+}
