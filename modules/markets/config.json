@@ -1,5 +1,14 @@
 {
     "markets": {
-        "cs_money": { "active": true }
-    }
+        "cs_money": {
+            "active": true,
+            "discount_percent": 30,
+            "price": {
+                "min_default": 500,
+                "extra": { "max_stickers_percent": 10 }
+            }
+        }
+    },
+
+    "black_names": []
 }

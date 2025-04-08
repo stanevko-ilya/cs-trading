@@ -24,6 +24,7 @@ class Market {
     }
     
     getRequestArgs(args) { return Object.isObject(args) && args[this.#name] || {} }
+    getConfig() { return this.getRequestArgs(modules.markets.getConfig().markets) }
 
     constructor(dirname, name) {
         this.#__dirname = dirname;
@@ -45,6 +46,7 @@ class Market {
     async getCurrencies(name='RUB') { }
     async getBalance() { }
     async getItems({ minPrice=0, maxPrice=1e5, offset=0 }) { }
+    async filterItems(items) { }
     async buyItems(items) { }
 }
 

@@ -131,6 +131,16 @@ class CSMoney extends Market {
         return this.#currencies.data[name]?.value || null;
     }
 
+    async #loadCurrencies() {
+        const request = await this.#request({ url: 'https://cs.money/get_currencies', json: true });
+        return request;
+    }
+
+    async testCurrencies() {
+        const rub_usd = await this.getCurrencies();
+        console.log(`1 USD = ${rub_usd} RUB`);
+    }
+
     async getBalance() {
         const auth = this.getAuth();        
         if (!auth) return false;
@@ -140,10 +150,9 @@ class CSMoney extends Market {
         
         return JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || false;
     }
-
-    async #loadCurrencies() {
-        const request = await this.#request({ url: 'https://cs.money/get_currencies', json: true });
-        return request;
+    async testBalance() {
+        const balance = await this.getBalance();
+        console.log(`Баланс: ${balance}$`);
     }
 
     /** @returns {Array<import('./types/MarketItem').default>} */
@@ -154,10 +163,43 @@ class CSMoney extends Market {
         return request?.items || [];
     }
 
-    /** @param {Array<import('./types/DataItem').default>} buyItems  */
-    async buyItems(buyItems) {
+    /** @param {Array<import('./types/MarketItem').default>} items  */
+    async filterItems(items) {
+        const black_list = modules.markets.getConfig().black_list.map(name => new RegExp(name));
+
+        const config = this.getConfig();
+        const rub_usd = await this.getCurrencies();
+        return items.filter(item => {
+            if (item.pricing.discount < config.discount_percent/100 || item.pricing.default*rub_usd >= config.price.min_default) return false;
+            
+            if (item.pricing?.extra) {
+                const extra_stickers = (item.pricing.extra?.stickers || 0)/item.pricing.computed;
+                if (extra_stickers > config.price.extra.max_stickers_percent/100) return false;
+            }
+
+            if (black_list.find(regexp => regexp.test(item.asset.names.full))) return false;
+        });
+    }
+
+    /** @param {Array<import('./types/MarketItem').default>} items  */
+    convertItems(items) { return items.map(item => ({ id: item.id, price: item.pricing.computed })) }
+
+    async testItems() {
+        const items = await this.getItems();
+        console.log(`Предметов: ${items.length}`);
+        
+        const filter_items = await this.filterItems(items);
+        console.log(`Отфильтрованных предметов: ${filter_items.length}`);
+
+        const convertItems = await this.convertItems(filter_items);
+        console.log(`Сконвертированные предметы: ${convertItems}`);
+    }
+
+    async buyItems(marketItems) {
         const auth = this.getAuth();
         if (!auth) return false;
+
+        const buyItems = await this.convertItems(await this.filterItems(marketItems));
 
         const balance = await this.getBalance();
         if (typeof(balance) !== 'number') return false;
@@ -192,24 +234,7 @@ class CSMoney extends Market {
 
         return true;
     }
-
-    // Проверка получения курса, баланса и предметов
-    async test1() {
-        const rub_usd = await this.getCurrencies();
-        console.log(`1 USD = ${rub_usd} RUB`);
-
-        const balance = await this.getBalance();
-        console.log(`Баланс: ${balance}$`);
-
-        const items = await this.getItems();
-        console.log(`Предметов: ${items.length}`);
-        console.log(items[0]);
-
-        return true;
-    }
-
-    // Проверка покупки предмета
-    async test2() {
+    async testBuyItems() {
         /** @type {import('./types/DataItem').default} */
         const item_data = [
             { id: 37790373, price: 0.02 },
@@ -217,8 +242,6 @@ class CSMoney extends Market {
             { id: 37770089, price: 0.02 }
         ];
         const buy = await this.buyItems(item_data);
-
-        return true;
     }
 }
 
