@@ -139,6 +139,7 @@ class CSMoney extends Market {
     async testCurrencies() {
         const rub_usd = await this.getCurrencies();
         console.log(`1 USD = ${rub_usd} RUB`);
+        return true;
     }
 
     async getBalance() {
@@ -153,6 +154,7 @@ class CSMoney extends Market {
     async testBalance() {
         const balance = await this.getBalance();
         console.log(`Баланс: ${balance}$`);
+        return true;
     }
 
     /** @returns {Array<import('./types/MarketItem').default>} */
@@ -189,10 +191,12 @@ class CSMoney extends Market {
         console.log(`Предметов: ${items.length}`);
         
         const filter_items = await this.filterItems(items);
-        console.log(`Отфильтрованных предметов: ${filter_items.length}`);
+        console.log(`Валидных предметов: ${filter_items.length}`);
 
         const convertItems = await this.convertItems(filter_items);
-        console.log(`Сконвертированные предметы: ${convertItems}`);
+        console.log(`Сконвертированные предметы:`, convertItems);
+        
+        return true;
     }
 
     async buyItems(marketItems) {
@@ -242,6 +246,7 @@ class CSMoney extends Market {
             { id: 37770089, price: 0.02 }
         ];
         const buy = await this.buyItems(item_data);
+        return buy;
     }
 }
 
