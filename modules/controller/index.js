@@ -1,4 +1,5 @@
 const vk_io = require('vk-io');
+const asyncDelay = require('../../functions/asyncDelay');
 const modules = require('../../modules');
 const Module = require('../_class');
 
@@ -49,6 +50,7 @@ class Controller extends Module {
                                 ].join('\n'),
                                 attachment: image.toString()
                             });
+                            await asyncDelay(1000);
                         }
                     }
                 }
