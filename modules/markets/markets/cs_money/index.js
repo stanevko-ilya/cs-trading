@@ -33,7 +33,7 @@ class CSMoney extends Market {
         const response = await rp(options);
         if (response.error === 6) {
             this.setAuth(null);
-            new Promise(() => this.init(true));
+            new Promise(() => this.init());
         }
         return response;
     }
@@ -158,9 +158,11 @@ class CSMoney extends Market {
     }
 
     /** @returns {Array<import('./types/MarketItem').default>} */
-    async getItems({ minPrice=0, maxPrice=1e5, offset=0, limit=60 }={}) {
+    async getItems({ minPrice=100, maxPrice=1e5, offset=0, limit=null }={}) {
+        if (limit === null) limit = this.getConfig().requestLimit;
+
         const rub_usd = await this.getCurrencies();
-        const url = `https://cs.money/1.0/market/sell-orders?limit=${limit}&offset=${offset}&minPrice=${minPrice/rub_usd}&maxPrice=${maxPrice/rub_usd}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=discount`;
+        const url = `https://cs.money/1.0/market/sell-orders?limit=${limit}&offset=${offset}&minPrice=${minPrice/rub_usd}&maxPrice=${maxPrice/rub_usd}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec%20Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=insertDate`;
         const request = await this.#request({ url, json: true });
         return request?.items || [];
     }
@@ -180,6 +182,7 @@ class CSMoney extends Market {
             }
 
             if (black_list.find(regexp => regexp.test(item.asset.names.full))) return false;
+            return true;
         });
     }
 
@@ -203,7 +206,13 @@ class CSMoney extends Market {
         const auth = this.getAuth();
         if (!auth) return false;
 
-        const buyItems = await this.convertItems(await this.filterItems(marketItems));
+        const filter = await this.filterItems(marketItems);
+        modules.logger.log('info', `Отфильтрованных предметов: ${fitler.length}`, true);
+        
+        if (filter.length === 0) return false;
+
+        const buyItems = await this.convertItems(fitler);
+        modules.logger.log('info', `Сконвертированных предметов: ${JSON.stringify(buyItems)}`, true);
 
         const balance = await this.getBalance();
         if (typeof(balance) !== 'number') return false;
@@ -241,9 +250,7 @@ class CSMoney extends Market {
     async testBuyItems() {
         /** @type {import('./types/DataItem').default} */
         const item_data = [
-            { id: 37790373, price: 0.02 },
-            { id: 37762643, price: 0.02 },
-            { id: 37770089, price: 0.02 }
+            { id: 0, price: 0 }
         ];
         const buy = await this.buyItems(item_data);
         return buy;

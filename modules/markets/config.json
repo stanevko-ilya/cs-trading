@@ -3,9 +3,10 @@
         "cs_money": {
             "active": true,
             "discount_percent": 30,
+            "requestLimit": 5,
             "price": {
                 "min_default": 500,
-                "extra": { "max_stickers_percent": 10 }
+                "extra": { "max_stickers_percent": 30 }
             }
         }
     },

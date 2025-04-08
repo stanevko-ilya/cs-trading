@@ -61,9 +61,10 @@ class Logger extends Module {
      * 
      * @param {'info'|'warn'|'error'|String} level Любой уровень сообщения
      * @param {String|Array<String>} message Сообщение или список сообщений
+     * @param {Boolean} onlyConsole Обновляет последнюю строку в логах
      * @description Добавляет запись в файл
      */
-    log(level, message) {
+    log(level, message, onlyConsole=false) {
         if (!this.#logging) return false;
 
         const checked = this.check_file(true, null);
@@ -85,11 +86,13 @@ class Logger extends Module {
                 .replace('%M%', now.getMinutes())
                 .replace('%SS%', now.getSeconds().toStringWithZeros())
                 .replace('%S%', now.getSeconds())
+                .replace('%MSMS%', now.getMilliseconds().toStringWithZeros())
+                .replace('%MS%', now.getMilliseconds())
 
                 .replace('%text%', text)
         );
 
-        fs.writeFileSync(checked.path_to_file, print.join('\n'), { flag: 'a' });
+        if (!onlyConsole) fs.writeFileSync(checked.path_to_file, print.join('\n'), { flag: 'a' });
         if (this.#to_console) print.map(message => console.log(message));
 
         return true;

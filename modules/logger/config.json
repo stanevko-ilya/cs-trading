@@ -4,7 +4,7 @@
     "format": {
         "file_name": "%DD%.%MM%.%YYYY%",
         "file_extension": "log",
-        "log": "[%level%][%HH%:%MM%:%SS%]%text%"
+        "log": "[%level%][%HH%:%MM%:%SS%.%MS%]%text%"
     },
     "save_logs": 180
 }

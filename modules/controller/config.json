@@ -1,0 +1,7 @@
+{
+    "intervalMs": 700,
+    "actions": {
+        "buy": false,
+        "vk_chat": true
+    }
+}
