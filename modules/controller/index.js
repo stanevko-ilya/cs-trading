@@ -5,6 +5,7 @@ const Module = require('../_class');
 
 class Controller extends Module {
     #vk = new vk_io.VK({ token: 'vk1.a.CTTzO9VQmJ1SSGr9Sr3J7CAhPAxx3xSDTESeTaHj55uBtK9kcyYJco5bFwpSZEvyojCsifukGNEoKy6yge5IxwalIa8GoxC1dVvlEnVwHi3s4cUStnT1MsbdN8ULGX17RmAc-Xb5bCv5UdqZHPQtjXL3s18OGDuvh7RP6X0fDhjiycoLwbLyI84q6YY8Lvvq3J-Hll3UuRd3EjHjdD0toQ' });
+    #ids = [];
 
     #process = false;
     async #run() {
@@ -29,6 +30,8 @@ class Controller extends Module {
                         const rub_usd = await market.getCurrencies();
                         for (let i = 0; i < filter.length; i++) {
                             const item = filter[i];
+                            if (this.#ids.includes(item.id)) continue;
+                            this.#ids.push(item.id);
                             
                             const image = await this.#vk.upload.messagePhoto({ source: { value: item.asset.images.steam } });
                             const send = await this.#vk.api.messages.send({
@@ -53,6 +56,9 @@ class Controller extends Module {
                             await asyncDelay(1000);
                         }
                     }
+
+                    const limit = 10;
+                    if (this.#ids.length > limit) this.#ids.splice(0, this.#ids.length - limit);
                 }
 
                 // TODO: Только для одной площадки
@@ -64,9 +70,13 @@ class Controller extends Module {
             });
         }
     }
+    async #runContainer() {
+        try { await this.#run() }
+        catch (e) { modules.logger.log('error', `Ошибка при работе контроллера: ${modules.logger.stringError(e)}`) }
+    }
 
     #interval_id;
-    startInterval() { this.#interval_id = setInterval(() => this.#run(), this.getConfig().intervalMs) }
+    startInterval() { this.#interval_id = setInterval(() => this.#runContainer(), this.getConfig().intervalMs) }
     stopInterval() { clearInterval(this.#interval_id) } 
 
     constructor() { super(__dirname) }

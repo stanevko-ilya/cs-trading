@@ -174,7 +174,7 @@ class CSMoney extends Market {
         const config = this.getConfig();
         const rub_usd = await this.getCurrencies();
         return items.filter(item => {
-            if (item.pricing.discount < config.discount_percent/100 || item.pricing.default*rub_usd >= config.price.min_default) return false;
+            if (item.pricing.discount < config.discount_percent/100 || item.pricing.default*rub_usd < config.price.min_default) return false;
             
             if (item.pricing?.extra) {
                 const extra_stickers = (item.pricing.extra?.stickers || 0)/item.pricing.computed;
