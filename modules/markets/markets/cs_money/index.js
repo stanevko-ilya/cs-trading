@@ -30,12 +30,17 @@ class CSMoney extends Market {
     async #request(options) {
         if (!('simple' in options)) options.simple = false;
 
-        const response = await rp(options);
-        if (response.error === 6) {
-            this.setAuth(null);
-            new Promise(() => this.init());
+        try {
+            const response = await rp(options);
+            if (response.error === 6) {
+                this.setAuth(null);
+                new Promise(() => this.init());
+            }
+            return response;
+        } catch (e) {
+            modules.logger.log('error', `Ошибка запроса: ${modules.logger.stringError(e)}`);
+            return false;
         }
-        return response;
     }
     
     constructor(name) { super(__dirname, name) }
@@ -111,7 +116,7 @@ class CSMoney extends Market {
                 headers: withAuth && this.getAuth() || undefined, json: true
             });
             
-            return withAuth ? request?.error !== 6 : Boolean(request);
+            return Boolean(request) && (!withAuth || request?.error !== 6);
         } catch (e) {
             modules.logger.log('error', `Ошибка при пилинговании сервиса: ${modules.logger.stringError(e)}`);
             return false;
@@ -133,7 +138,7 @@ class CSMoney extends Market {
 
     async #loadCurrencies() {
         const request = await this.#request({ url: 'https://cs.money/get_currencies', json: true });
-        return request;
+        return request || {};
     }
 
     async testCurrencies() {
@@ -147,8 +152,9 @@ class CSMoney extends Market {
         if (!auth) return false;
 
         const request = await this.#request({ url: 'https://cs.money/ru/market/buy/', headers: auth });
-        const html = cheerio.load(request);        
-        
+        if (!request) return false;
+
+        const html = cheerio.load(request);
         return JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || false;
     }
     async testBalance() {
@@ -206,14 +212,10 @@ class CSMoney extends Market {
         const auth = this.getAuth();
         if (!auth) return false;
 
-        const filter = await this.filterItems(marketItems);
-        modules.logger.log('info', `Отфильтрованных предметов: ${fitler.length}`, true);
-        
+        const filter = await this.filterItems(marketItems);        
         if (filter.length === 0) return false;
 
-        const buyItems = await this.convertItems(fitler);
-        modules.logger.log('info', `Сконвертированных предметов: ${JSON.stringify(buyItems)}`, true);
-
+        const buyItems = await this.convertItems(filter);
         const balance = await this.getBalance();
         if (typeof(balance) !== 'number') return false;
 
@@ -239,7 +241,7 @@ class CSMoney extends Market {
                 body: { items },
                 json: true
             });
-            modules.logger.log('info', `${JSON.stringify(items)} покупка: ${JSON.stringify(purchase) === '{}'}`);
+            modules.logger.log('info', `${JSON.stringify(items)} покупка: ${purchase && JSON.stringify(purchase) === '{}'}`);
         } catch (e) {
             modules.logger.log('error', `Ошибка при покупке скинов ${JSON.stringify(items)}: ${modules.logger.stringError(e)}`);
             return false;

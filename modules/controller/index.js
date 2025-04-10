@@ -70,13 +70,9 @@ class Controller extends Module {
             });
         }
     }
-    async #runContainer() {
-        try { await this.#run() }
-        catch (e) { modules.logger.log('error', `Ошибка при работе контроллера: ${modules.logger.stringError(e)}`) }
-    }
 
     #interval_id;
-    startInterval() { this.#interval_id = setInterval(() => this.#runContainer(), this.getConfig().intervalMs) }
+    startInterval() { this.#interval_id = setInterval(() => this.#run(), this.getConfig().intervalMs) }
     stopInterval() { clearInterval(this.#interval_id) } 
 
     constructor() { super(__dirname) }
