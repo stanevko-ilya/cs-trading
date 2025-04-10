@@ -272,7 +272,7 @@ class CSMoney extends Market {
         await this.getBalance(true);
         return true;
     }
-    async test() {
+    async testBuyItems() {
         const now = Date.now();
         /** @type {import('./types/DataItem').default} */
         const item_data = [ { id: 37456648, price: 1.79 } ];
