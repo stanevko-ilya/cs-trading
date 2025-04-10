@@ -65,7 +65,7 @@ class Controller extends Module {
                 modules.logger.log('info', `Предметов: ${items.length} | Первый предмет: ${(() => {
                     /** @type {import('../markets/markets/cs_money/types/MarketItem').default} */
                     const item = items[0];
-                    return item ? `${item.asset.names.full} ${item.pricing.computed}$/${item.pricing.default}$ (${(item.pricing.discount*100).toFixed(2)}%)` : 'не найден';
+                    return item ? `${item.asset.names.full} ${item.pricing.computed}$/${item.pricing.default}$ (${(-item.pricing.discount*100).toFixed(2)}%)` : 'не найден';
                 })()}`, true);
             });
         }
