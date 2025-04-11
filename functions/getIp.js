@@ -22,11 +22,11 @@ const ips = {
 function getIp(type) {
     if (type === 'main') return ips.list[0];
     
-    let new_index = ips.last + 1;
-    if (new_index > ips.list.length-1) new_index = 0;
-    ips.last = new_index;
+    let index = ips.last + 1;
+    if (index > ips.list.length-1) index = 0;
+    ips.last = index;
 
-    return ips.list[new_index];
+    return ips.list[index];
 }
 
 module.exports = getIp;

@@ -3,6 +3,7 @@ const selenium = require('selenium-webdriver');
 const cheerio = require('cheerio');
 const Market = require('../_class');
 const modules = require('../../../../modules');
+const getUserAgent = require('../../../../functions/getUserAgent');
 const getIp = require('../../../../functions/getIp');
 
 class CSMoney extends Market {    
@@ -41,7 +42,8 @@ class CSMoney extends Market {
                 this.setAuth(null);
                 new Promise(() => this.init());
             }
-            
+
+            console.log(options.localAddress);
             return response;
         } catch (e) {
             modules.logger.log('error', `Ошибка запроса: ${modules.logger.stringError(e)}`);
@@ -114,7 +116,7 @@ class CSMoney extends Market {
         return request.result === 'completed';
     }
 
-    async init() { return await this.#initAuth() && await this.#initBalance(); }
+    async init() { return await this.#initAuth() && await this.#initCurrencies() && await this.#initBalance() }
     async ping(withAuth=false) {
         try {
             const request = await this.#request({
@@ -132,7 +134,7 @@ class CSMoney extends Market {
     
     #currencies = {
         last_load: null,
-        interval: 6e5,
+        interval: 36e5,
         data: {}
     };
     async getCurrencies(name='RUB') {
@@ -148,15 +150,24 @@ class CSMoney extends Market {
         return request || {};
     }
 
+    async #initCurrencies() {
+        const currencie = await this.getCurrencies();
+        return typeof(currencie) === 'number';
+    }
+
     async testCurrencies() {
         const rub_usd = await this.getCurrencies();
         console.log(`1 USD = ${rub_usd} RUB`);
         return true;
     }
 
-    #balance = 0;
+    #balance = {
+        amount: 0,
+        last_update: 0
+    };
     async getBalance(load=true) {
-        if (!load) return this.#balance;
+        if (!load) return this.#balance.amount;
+        if (Date.now() - this.#balance.last_update < 1e3) return false;
 
         const auth = this.getAuth();        
         if (!auth) return false;
@@ -165,27 +176,35 @@ class CSMoney extends Market {
         if (!request) return false;
 
         const html = cheerio.load(request);
-        this.#balance = JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || 0;
+        this.#balance.amount = JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || 0;
+        this.#balance.last_update = Date.now();
         return this.#balance;
     }
     async #initBalance() {
         const balance = await this.getBalance(true);
-        return typeof(balance) === 'number';
+        return typeof(balance.amount) === 'number';
     }
     async testBalance() {
         const balance = await this.getBalance();
-        console.log(`Баланс: ${balance}$`);
+        console.log(`Баланс: ${balance.amount}$`);
         return true;
     }
 
+    #last_id = 0;
     /** @returns {Array<import('./types/MarketItem').default>} */
     async getItems({ minPrice=100, maxPrice=1e5, offset=0, limit=null }={}) {
+        const start_method = Date.now();
         if (limit === null) limit = this.getConfig().requestLimit;
+        
+        const id = this.#last_id + 1;
+        this.#last_id += 1;
 
         const rub_usd = await this.getCurrencies();
-        const url = `https://cs.money/1.0/market/sell-orders?limit=${limit}&offset=${offset}&minPrice=${minPrice/rub_usd}&maxPrice=${maxPrice/rub_usd}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec%20Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=insertDate`;
-        const request = await this.#request({ url, json: true }, 'next');
-        // console.log(request);
+        const url = `https://cs.money/1.0/market/sell-orders?id=${id}&limit=${limit}&offset=${offset}&minPrice=${(minPrice/rub_usd).toFixed(0)}&maxPrice=${(maxPrice/rub_usd).toFixed(0)}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec%20Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=insertDate`;
+        
+        const start = Date.now();
+        const request = await this.#request({ url, json: true, headers: { 'user-agent': getUserAgent() } }, 'next');
+        console.log(`ID: ${id} | Время запроса: ${Date.now() - start}мс | Время метода: ${Date.now() - start_method}мс`);
         
         return request?.items || [];
     }
@@ -214,20 +233,29 @@ class CSMoney extends Market {
     /** @param {Array<import('./types/MarketItem').default>} items  */
     convertItems(items) { return items.map(item => ({ id: item.id, price: item.pricing.computed })) }
 
-    async testItems() {
-        const items = await this.getItems();
-        console.log(`Предметов: ${items.length}`);
-        
-        const filter_items = await this.filterItems(items);
-        console.log(`Валидных предметов: ${filter_items.length}`);
+    async testGetItem() {
+        const start = Date.now();
 
-        const convertItems = await this.convertItems(filter_items);
-        console.log(`Сконвертированные предметы:`, convertItems);
+        const start_items = Date.now();
+        const items = await this.getItems();
+        console.log(`Предметов: ${items.length} | Время: ${Date.now() - start_items}мс`);
         
+        const start_filter = Date.now();
+        const filter_items = await this.filterItems(items);
+        console.log(`Валидных предметов: ${filter_items.length} | Время: ${Date.now() - start_filter}мс`);
+
+        const start_convert = Date.now();
+        const convertItems = await this.convertItems(filter_items);
+        console.log(`Сконвертированные предметы:`, convertItems, `| Время: ${Date.now() - start_convert}мс`);
+        
+        console.log(`Весь тест: ${Date.now() - start}мс`);        
         return true;
     }
 
-    async buyItems(itemsData, converted=false, start) {
+    #last_buy = 0;
+    async buyItems(itemsData, converted=false) {
+        if (Date.now() - this.#last_buy < 600) return false;
+
         const auth = this.getAuth();
         if (!auth) return false;
 
@@ -235,7 +263,7 @@ class CSMoney extends Market {
         if (buyItems.length === 0) return false;
 
         const balance = await this.getBalance(false);
-        if (typeof(balance) !== 'number') return false;
+        if (typeof(balance.amount) !== 'number') return false;
 
         let sum = 0;
         const items = [];
@@ -243,7 +271,7 @@ class CSMoney extends Market {
             const item = buyItems[i];
 
             const calc_sum = sum + item.price;
-            if (calc_sum > balance) continue;
+            if (calc_sum > balance.amount) continue;
 
             sum = calc_sum;
             items.push(item);
@@ -252,6 +280,7 @@ class CSMoney extends Market {
         if (items.length === 0) return false;
 
         try {
+            this.#last_buy = Date.now();
             const purchase = await this.#request({
                 url: 'https://cs.money/1.0/market/purchase',
                 method: 'POST',
@@ -260,10 +289,11 @@ class CSMoney extends Market {
                 json: true
             });
 
-            const result = purchase && JSON.stringify(purchase) === '{}';
+            const answer_string = JSON.stringify(purchase);
+            const result = purchase && answer_string === '{}';
             if (result) this.addBoughtIds(items.map(item => item.id));
 
-            modules.logger.log('info', `${JSON.stringify(items)} покупка: ${result}`);
+            modules.logger.log('info', `${JSON.stringify(items)} покупка: ${answer_string}`);
         } catch (e) {
             modules.logger.log('error', `Ошибка при покупке скинов ${JSON.stringify(items)}: ${modules.logger.stringError(e)}`);
             return false;

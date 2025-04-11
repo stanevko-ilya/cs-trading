@@ -33,7 +33,10 @@ class Controller extends Module {
                             if (this.#ids.includes(item.id)) continue;
                             this.#ids.push(item.id);
                             
-                            const image = await this.#vk.upload.messagePhoto({ source: { value: item.asset.images.steam } });
+                            let image = undefined;
+                            try { image = await this.#vk.upload.messagePhoto({ source: { value: item.asset.images.steam } }) }
+                            catch (e) { modules.logger.log('error', `Ошибка загрузки изображения: ${modules.logger.stringError(e)} | Изображение: ${JSON.stringify(item.asset.images)}`) }
+
                             const send = await this.#vk.api.messages.send({
                                 random_id: 0,
                                 chat_id: 1,
@@ -51,7 +54,7 @@ class Controller extends Module {
                                             'отсутствуют'
                                     }`
                                 ].join('\n'),
-                                attachment: image.toString()
+                                attachment: image?.toString()
                             });
                             await asyncDelay(1000);
                         }
@@ -62,11 +65,7 @@ class Controller extends Module {
                 }
 
                 // TODO: Только для одной площадки
-                modules.logger.log('info', `Предметов: ${items.length} | Первый предмет: ${(() => {
-                    /** @type {import('../markets/markets/cs_money/types/MarketItem').default} */
-                    const item = items[0];
-                    return item ? `${item.asset.names.full} ${item.pricing.computed}$/${item.pricing.default}$ (${(-item.pricing.discount*100).toFixed(2)}%)` : 'не найден';
-                })()}`, true);
+                modules.logger.log('info', `Предметов: ${items.length} | Первые предмет: ${items.slice(0, 10).map(item => item.asset.names.full.split('|')[0].trim()).join(' -> ')}`, true);
             });
         }
     }
