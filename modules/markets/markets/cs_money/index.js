@@ -192,16 +192,17 @@ class CSMoney extends Market {
 
     #last_id = 0;
     /** @returns {Array<import('./types/MarketItem').default>} */
-    async getItems({ minPrice=100, maxPrice=1e5, offset=0, limit=null }={}) {
+    async getItems({ minPrice=100, maxPrice=null, offset=0, limit=null }={}) {
         const start_method = Date.now();
+        
+        const rub_usd = await this.getCurrencies();
+        if (maxPrice === null) maxPrice = this.#balance.amount * rub_usd;
         if (limit === null) limit = this.getConfig().requestLimit;
         
         const id = this.#last_id + 1;
         this.#last_id += 1;
 
-        const rub_usd = await this.getCurrencies();
         const url = `https://cs.money/1.0/market/sell-orders?id=${id}&limit=${limit}&offset=${offset}&minPrice=${(minPrice/rub_usd).toFixed(0)}&maxPrice=${(maxPrice/rub_usd).toFixed(0)}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec%20Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=insertDate`;
-        
         const start = Date.now();
         const request = await this.#request({ url, json: true, headers: { 'user-agent': getUserAgent() } }, 'next');
         console.log(`ID: ${id} | Время запроса: ${Date.now() - start}мс | Время метода: ${Date.now() - start_method}мс`);
