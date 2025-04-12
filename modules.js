@@ -9,7 +9,10 @@ module.exports = {
     browser: null,
 
     /** @type {import('./modules/markets')} */
-    markets: null
+    markets: null,
+
+    /** @type {import('./modules/controller')} */
+    controller: null
 };
 
 directorySearch(

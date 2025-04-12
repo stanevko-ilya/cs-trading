@@ -50,7 +50,7 @@ class Browser extends Module {
         }
         
         this.#queue.splice(0, 1);
-        if (this.#queue.length !== 0) this.#process();
+        if (this.#queue.length !== 0) new Promise(() => this.#process());
 
         return { result: 'completed' };
     }
