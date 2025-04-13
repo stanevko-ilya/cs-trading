@@ -1,9 +1,11 @@
+const fs = require('fs');
 const rp = require('request-promise');
 const selenium = require('selenium-webdriver');
 const Market = require('../_class');
 const modules = require('../../../../modules');
 const asyncDelay = require('../../../../functions/asyncDelay');
 const getIp = require('../../../../functions/getIp');
+const path = require('path');
 
 class CSMoney extends Market {    
     getAuth() {
@@ -27,6 +29,7 @@ class CSMoney extends Market {
         return super.validAuth();
     }
 
+    #request_script = 'return null';
     /** @param {rp.Options} options */
     async #request(options, ip='main') {
         if (!('simple' in options)) options.simple = false;
@@ -34,22 +37,51 @@ class CSMoney extends Market {
             const address = await getIp(ip);
             options.localAddress = address;
         }
-        if (!('headers' in options)) options.headers = {};
-        if (!('user-agent' in options.headers)) options.headers['user-agent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
 
-        try {
-            const response = await rp(options);
-            if (response.error === 6) {
-                this.setAuth(null);
-                new Promise(() => this.init());
+        // try {
+        //     const response = await rp(options);
+        //     if (response.error === 6) {
+        //         this.setAuth(null);
+        //         new Promise(() => this.init());
+        //     }
+
+        //     console.log(options.localAddress);
+        //     return response;
+        // } catch (e) {
+        //     modules.logger.log('error', `Ошибка запроса: ${modules.logger.stringError(e)}`);
+        //     return false;
+        // }
+
+        const stoped = !modules.browser.isWork();
+        if (stoped) {
+            const started = await modules.browser.start();
+            if (!started) return false;
+        }
+
+        const driver = modules.browser.getDriver();
+        let answer = null;
+        await modules.browser.addToQueue(async () => {
+            const url = await driver.getCurrentUrl();
+            if (!url.includes('cs.money')) {
+                await driver.get('https://cs.money');
+                await asyncDelay(10000);
             }
 
-            console.log(options.localAddress);
-            return response;
-        } catch (e) {
-            modules.logger.log('error', `Ошибка запроса: ${modules.logger.stringError(e)}`);
-            return false;
-        }
+            try {
+                const checkbox = driver.findElement(selenium.By.xpath(`//input[@type='checkbox' and not(@disabled)]`));
+                if (checkbox) {
+                    await checkbox.click();
+                    await asyncDelay(1000);
+                    await driver.get('https://cs.money');
+                }
+            } catch (e) { console.error(e) }
+
+            answer = await driver.executeAsyncScript(this.#request_script.replace('%options%', JSON.stringify(options)));
+            if (stoped) await modules.browser.stop();
+        });
+
+        console.log(answer);        
+        return answer;
     }
     
     constructor(name) { super(__dirname, name) }
@@ -70,7 +102,7 @@ class CSMoney extends Market {
             const driver = modules.browser.getDriver();
             const saveAuth = async () => {
                 try {
-                    await driver.get('https://cs.money');
+                    await this.#request({ url: 'https://cs.money' });
 
                     // const auth = {};
                     // const keys = [ 'steamid', 'support_token', 'csgo_ses', '_uetvid' ];
@@ -89,7 +121,11 @@ class CSMoney extends Market {
 
                     // if (done) this.setAuth(auth);
                     const now = Date.now();
-                    return this.setAuth((await driver.manage().getCookies()).filter(cookie => cookie.expiry > now));
+                    const cookies = await driver.manage().getCookies();
+                    const filter_cookies = cookies.filter(cookie => cookie.expiry > now);
+                    console.log(cookies.length, filter_cookies.length);
+                    
+                    return this.setAuth(filter_cookies);
                 } catch(e) {
                     modules.logger.log('warn', `Ошибка при сохранение данных авторизации: ${modules.logger.stringError(e)}`);
                     return false;
@@ -121,6 +157,8 @@ class CSMoney extends Market {
     }
 
     async init(super_init=true) {
+        this.#request_script = fs.readFileSync(path.join(this.getDirname(), './#request.js')).toString();
+
         const functions = [
             async () => await this.#initAuth(super_init),
             async () => await this.#initCurrencies(),
@@ -136,9 +174,8 @@ class CSMoney extends Market {
         try {
             const request = await this.#request({
                 method: withAuth ? 'POST' : 'GET',
-                url: withAuth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses',
-                headers: withAuth && this.getAuth() || undefined, json: true
-            });            
+                url: withAuth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses'
+            });
             return Boolean(request) && (!withAuth || request.email && request?.error !== 6);
         } catch (e) {
             modules.logger.log('error', `Ошибка при пилинговании сервиса: ${modules.logger.stringError(e)}`);
@@ -189,25 +226,24 @@ class CSMoney extends Market {
         const auth = this.getAuth();        
         if (!auth) return false;
 
-        // const request = await this.#request({ url: 'https://cs.money/ru/market/buy/', headers: auth });
-        // if (!request) return false;   
-        // const html = cheerio.load(request);
-        // this.#balance.amount = JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || 0;
+        const request = await this.#request({ url: 'https://cs.money/ru/market/buy/' });
+        if (!request) return false;   
+        const html = cheerio.load(request);
+        this.#balance.amount = JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || 0;
         
-        const stoped = !modules.browser.isWork();
-        if (stoped) {
-            const started = await modules.browser.start();
-            if (!started) return false;
-        }
-
-        const driver = modules.browser.getDriver();
-        await modules.browser.addToQueue(async () => {
-            driver.get('https://cs.money/ru/market/buy/');
-            await driver.sleep(10000);
-            const answer = await driver.executeScript(`return document.getElementById('__app-params').innerText`);
-            this.#balance.amount = JSON.parse(answer)?.userInfo?.marketBalance || 0;
-            if (stoped) await modules.browser.stop();
-        });
+        // const stoped = !modules.browser.isWork();
+        // if (stoped) {
+        //     const started = await modules.browser.start();
+        //     if (!started) return false;
+        // }
+        // const driver = modules.browser.getDriver();
+        // await modules.browser.addToQueue(async () => {
+        //     driver.get('https://cs.money/ru/market/buy/');
+        //     await driver.sleep(10000);
+        //     const answer = await driver.executeScript(`return document.getElementById('__app-params').innerText`);
+        //     this.#balance.amount = JSON.parse(answer)?.userInfo?.marketBalance || 0;
+        //     if (stoped) await modules.browser.stop();
+        // });
         
         this.#balance.last_update = Date.now();
         return this.#balance;
@@ -319,7 +355,6 @@ class CSMoney extends Market {
             purchase = await this.#request({
                 url: 'https://cs.money/1.0/market/purchase',
                 method: 'POST',
-                headers: auth,
                 body: { items },
                 json: true
             });

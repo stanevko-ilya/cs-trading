@@ -1,13 +1,14 @@
-const rp = require('request-promise')
+const rp = require('request-promise');
 
-async function request() {
-    const req = await rp('https://cs.money/ru/market/buy/', {
-        headers: {
-            cookie: 'steamid=76561199303436188; support_token=e3e962da6967a4bf7bc324782b301321990f863ffb84f5f34a64301518bcaa48; csgo_ses=828e5beaec6c78917675f5e9ae0446b3f1c8cf1f8cf2e0157cad2f67fabf3362; _uetvid=390819b0124611f09de9292b37a81190|1m3oo3j|1744059708428|16|1|bat.bing.com/p/insights/c/a'
-        }
+async function run() {
+    const start = Date.now();
+    const request = await rp({
+        url: 'https://cs.money/1.0/market/sell-orders?limit=5&offset=0',
+        proxy: 'http://a470bf9d9fedf6ea8d04b-zone-custom-region-ru:ede1a312623bc5d287980ce8ebebe80298a82a87@p2.mangoproxy.com:2333',
+        json: true
     });
-    const index = req.indexOf('marketBalance');
-    console.log(req.slice(index, index+20));
-    
+
+    console.log(request);    
+    console.log(Date.now() - start);    
 }
-request();
+run();
