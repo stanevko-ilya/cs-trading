@@ -1,11 +1,9 @@
-const fs = require('fs');
+const cheerio = require('cheerio');
 const rp = require('request-promise');
 const selenium = require('selenium-webdriver');
+const cf_scraper = require('cloudflare-scraper').default;
 const Market = require('../_class');
 const modules = require('../../../../modules');
-const asyncDelay = require('../../../../functions/asyncDelay');
-const getIp = require('../../../../functions/getIp');
-const path = require('path');
 
 class CSMoney extends Market {    
     getAuth() {
@@ -29,59 +27,47 @@ class CSMoney extends Market {
         return super.validAuth();
     }
 
-    #request_script = 'return null';
-    /** @param {rp.Options} options */
-    async #request(options, ip='main') {
-        if (!('simple' in options)) options.simple = false;
-        if (!('proxy' in options)) {
-            const address = await getIp(ip);
-            options.localAddress = address;
+    /**
+     * @param {rp.Options} options Параметры запроса
+     * @param {'none'|'next'} [proxy='none'] Способ установки proxy
+    */
+    async #request(options, proxy='none') {
+        // Не используется
+        if (false && !('proxy' in options)) {
+            let proxy_data = null;
+            if (proxy === 'next') proxy_data = await modules.proxy.getNext();
+            if (proxy_data) options.proxy = proxy_data;
         }
 
-        // try {
-        //     const response = await rp(options);
-        //     if (response.error === 6) {
-        //         this.setAuth(null);
-        //         new Promise(() => this.init());
-        //     }
+        const url = String(options.url);
+        delete options.url;
 
-        //     console.log(options.localAddress);
-        //     return response;
-        // } catch (e) {
-        //     modules.logger.log('error', `Ошибка запроса: ${modules.logger.stringError(e)}`);
-        //     return false;
-        // }
+        const is_json = Boolean(options.json);
+        delete options.json;
 
-        const stoped = !modules.browser.isWork();
-        if (stoped) {
-            const started = await modules.browser.start();
-            if (!started) return false;
+        if ('body' in options && Object.isObject(options.body)) {
+            options.json = Object.clone(options.body);
+            delete options.body;
         }
 
-        const driver = modules.browser.getDriver();
-        let answer = null;
-        await modules.browser.addToQueue(async () => {
-            const url = await driver.getCurrentUrl();
-            if (!url.includes('cs.money')) {
-                await driver.get('https://cs.money');
-                await asyncDelay(10000);
+        if (!('throwHttpErrors' in options)) options.throwHttpErrors = false;
+
+        try {
+            const response = 
+                is_json ? 
+                    await cf_scraper(url, options).json()
+                :
+                    (await cf_scraper(url, options)).body
+            ;
+            if (Array.isArray(response?.errors) && response.errors[0]?.code === 6) {                
+                // this.setAuth(null);
+                new Promise(() => this.init());
             }
-
-            try {
-                const checkbox = driver.findElement(selenium.By.xpath(`//input[@type='checkbox' and not(@disabled)]`));
-                if (checkbox) {
-                    await checkbox.click();
-                    await asyncDelay(1000);
-                    await driver.get('https://cs.money');
-                }
-            } catch (e) { console.error(e) }
-
-            answer = await driver.executeAsyncScript(this.#request_script.replace('%options%', JSON.stringify(options)));
-            if (stoped) await modules.browser.stop();
-        });
-
-        console.log(answer);        
-        return answer;
+            return response;
+        } catch (e) {
+            modules.logger.log('error', `Ошибка запроса: ${modules.logger.stringError(e)}`);
+            return false;
+        }
     }
     
     constructor(name) { super(__dirname, name) }
@@ -102,35 +88,34 @@ class CSMoney extends Market {
             const driver = modules.browser.getDriver();
             const saveAuth = async () => {
                 try {
-                    await this.#request({ url: 'https://cs.money' });
+                    await driver.get('https://cs.money');
 
-                    // const auth = {};
-                    // const keys = [ 'steamid', 'support_token', 'csgo_ses', '_uetvid' ];
-                    // let done = true;
-                    // for (let i = 0; i < keys.length; i++) {
-                    //     const key = keys[i];
-                    //     const cookie = await driver.manage().getCookie(key);
+                    const auth = {};
+                    const keys = [ 'steamid', 'support_token', 'csgo_ses', '_uetvid' ];
+                    let done = true;
+                    for (let i = 0; i < keys.length; i++) {
+                        const key = keys[i];
+                        const cookie = await driver.manage().getCookie(key);
 
-                    //     const value = cookie || null;
-                    //     if (value === null) {
-                    //         done = false;
-                    //         break;
-                    //     }
-                    //     auth[key] = value;                        
-                    // }
+                        const value = cookie || null;
+                        if (value === null) {
+                            done = false;
+                            break;
+                        }
+                        auth[key] = value;                        
+                    }
 
-                    // if (done) this.setAuth(auth);
-                    const now = Date.now();
-                    const cookies = await driver.manage().getCookies();
-                    const filter_cookies = cookies.filter(cookie => cookie.expiry > now);
-                    console.log(cookies.length, filter_cookies.length);
+                    if (done) return this.setAuth(auth);
+                    // const now = Date.now();
+                    // const cookies = await driver.manage().getCookies();
+                    // const filter_cookies = cookies.filter(cookie => cookie.expiry > now);
+                    // console.log(cookies.length, filter_cookies.length);
                     
-                    return this.setAuth(filter_cookies);
+                    // return this.setAuth(filter_cookies);
                 } catch(e) {
                     modules.logger.log('warn', `Ошибка при сохранение данных авторизации: ${modules.logger.stringError(e)}`);
                     return false;
                 }
-
             }
 
             const try1 = await saveAuth();
@@ -156,26 +141,35 @@ class CSMoney extends Market {
         return request.result === 'completed';
     }
 
+    #initing = false
     async init(super_init=true) {
-        this.#request_script = fs.readFileSync(path.join(this.getDirname(), './#request.js')).toString();
+        if (this.#initing) return false;
+        this.#initing = true;
 
-        const functions = [
-            async () => await this.#initAuth(super_init),
-            async () => await this.#initCurrencies(),
-            async () => await this.#initBalance()
-        ];
-        for (const func of functions) {
-            const result = await func();
-            if (!result) return false;
+        try {
+            const functions = [
+                async () => await this.#initAuth(super_init),
+                async () => await this.#initCurrencies(),
+                async () => await this.#initBalance()
+            ];
+            for (const func of functions) {
+                const result = await func();
+                if (!result) return false;
+            }
         }
+        catch (e) { modules.logger.log('error', `Инициализация маркета: ${modules.logger.stringError(e)}`) }
+        finally { this.#initing = false }
+        
         return true;
     }
     async ping(withAuth=false) {
         try {
             const request = await this.#request({
                 method: withAuth ? 'POST' : 'GET',
-                url: withAuth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses'
-            });
+                url: withAuth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses',
+                headers: withAuth ? this.getAuth() : undefined,
+                json: true
+            }, withAuth ? 'none' : 'next');            
             return Boolean(request) && (!withAuth || request.email && request?.error !== 6);
         } catch (e) {
             modules.logger.log('error', `Ошибка при пилинговании сервиса: ${modules.logger.stringError(e)}`);
@@ -220,13 +214,13 @@ class CSMoney extends Market {
         last_update: 0
     };
     async getBalance(load=true) {
-        if (!load) return this.#balance.amount;
+        if (!load) return this.#balance;
         if (Date.now() - this.#balance.last_update < 30e3) return false;
 
         const auth = this.getAuth();        
         if (!auth) return false;
 
-        const request = await this.#request({ url: 'https://cs.money/ru/market/buy/' });
+        const request = await this.#request({ url: 'https://cs.money/ru/market/buy/', headers: auth });
         if (!request) return false;   
         const html = cheerio.load(request);
         this.#balance.amount = JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || 0;
@@ -272,7 +266,7 @@ class CSMoney extends Market {
 
         const url = `https://cs.money/1.0/market/sell-orders?id=${id}&limit=${limit}&offset=${offset}&minPrice=${(minPrice/rub_usd).toFixed(0)}&maxPrice=${(maxPrice/rub_usd).toFixed(0)}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec%20Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=insertDate`;
         const start = Date.now();
-        const request = await this.#request({ url, json: true }, 'next');
+        const request = await cf_scraper.get(url).json();
         console.log(`ID: ${id} | Время запроса: ${Date.now() - start}мс | Время метода: ${Date.now() - start_method}мс`);
         
         return request?.items || [];
@@ -293,7 +287,7 @@ class CSMoney extends Market {
             }
 
             if (black_list.find(regexp => regexp.test(item.asset.names.full))) return false;
-            if (this.checkBoughtId(item.id)) return false;
+            if (this.#buying_ids.includes(item.id) || this.checkBoughtId(item.id)) return false;
 
             return true;
         });
@@ -321,13 +315,12 @@ class CSMoney extends Market {
         return true;
     }
 
-    #last_buy = 0;
+    #buying_ids = [];
     async buyItems(itemsData, converted=false) {
-        if (Date.now() - this.#last_buy < 600) return false;
-
         const auth = this.getAuth();
         if (!auth) return false;
 
+        /** @type {Array<import('./types/DataItem').default>} */
         const buyItems = converted ? itemsData : await this.convertItems(await this.filterItems(itemsData));
         if (buyItems.length === 0) return false;
 
@@ -343,6 +336,7 @@ class CSMoney extends Market {
             if (calc_sum > balance.amount) continue;
 
             sum = calc_sum;
+            this.#buying_ids.push(item.id);
             items.push(item);
         }
 
@@ -351,9 +345,9 @@ class CSMoney extends Market {
 
         let purchase;
         try {
-            this.#last_buy = Date.now();
             purchase = await this.#request({
                 url: 'https://cs.money/1.0/market/purchase',
+                headers: auth,
                 method: 'POST',
                 body: { items },
                 json: true
@@ -361,6 +355,11 @@ class CSMoney extends Market {
 
             const answer_string = JSON.stringify(purchase);
             const result = purchase && answer_string === '{}';
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const index = this.#buying_ids.indexOf(item.id);
+                if (index > -1) this.#buying_ids.splice(index, 1);
+            }
             if (result) this.addBoughtIds(items.map(item => item.id));
 
             modules.logger.log('info', `${JSON.stringify(items)} покупка: ${answer_string}`);
@@ -371,11 +370,11 @@ class CSMoney extends Market {
         }
 
         await this.getBalance(true);
-        return true;
+        return items;
     }
     async test() {
         /** @type {import('./types/DataItem').default} */
-        const item_data = [ { id: 37456648, price: 1.79 } ];
+        const item_data = [ { id: 38181940, price: 0.09 } ];
         const buy = await this.buyItems(item_data, true);
         return buy;
     }

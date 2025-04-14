@@ -8,6 +8,9 @@ module.exports = {
     /** @type {import('./modules/browser')} */
     browser: null,
 
+    /** @type {import('./modules/proxy')} */
+    proxy: null,
+
     /** @type {import('./modules/markets')} */
     markets: null,
 

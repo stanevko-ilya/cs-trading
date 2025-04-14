@@ -1,0 +1,11 @@
+{
+    "apiKey": "mango_ca2ec708a87fce3d99426ec57cfac6f91ab9499f3f48823e75e58d8134ca5ee8",
+    "params": {
+        "protocols": [ "socks5" ],
+        "count": 100,
+        "sessionDuration": 3,
+        "connectionRegion": "ASIA",
+        "country": "RU",
+        "subAccountUsername": "a470bf9d9fedf6ea8d04b"
+    }
+}

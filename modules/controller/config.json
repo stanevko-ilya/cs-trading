@@ -1,5 +1,7 @@
 {
-    "intervalMs": 500,
+    "intervalMs": 700,
+    "deviationRange": 1000,
+
     "actions": {
         "buy": true,
         "vk_chat": true

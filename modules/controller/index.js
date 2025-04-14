@@ -19,13 +19,16 @@ class Controller extends Module {
             new Promise(async () => {
                 // Получение предметов
                 const items = await market.getItems();
+                const filter = await market.filterItems(items);
+                const convert = await market.convertItems(filter);
 
                 // Покупка предметов
-                if (config.actions.buy) await market.buyItems(items);
+                /** @type {Array<import('../markets/markets/cs_money/types/DataItem').default>} */
+                let bought_items = [];
+                if (config.actions.buy) bought_items = await market.buyItems(convert, true);
 
                 // Копирование в чат
                 if (config.actions.vk_chat) {
-                    const filter = await market.filterItems(items);
                     if (filter.length > 0) {
                         const rub_usd = await market.getCurrencies();
                         for (let i = 0; i < filter.length; i++) {
@@ -62,6 +65,12 @@ class Controller extends Module {
 
                     const limit = 10;
                     if (this.#ids.length > limit) this.#ids.splice(0, this.#ids.length - limit);
+
+                    if (bought_items.length > 0) await this.#vk.api.messages.send({
+                        random_id: 0,
+                        chat_id: 1,
+                        message: `Куплены прдеметы (IDs): ${bought_items.map(item => item.id).join(',')}`,
+                    })
                 }
 
                 // TODO: Только для одной площадки
@@ -69,21 +78,29 @@ class Controller extends Module {
             });
         }
     }
+    #runContainer() {
+        const config = this.getConfig();
+        const ms = config.intervalMs + Math.round(Math.random()*config.deviationRange);
+        return setTimeout(() => {
+            this.#runContainer();
+            this.#run();
+        }, ms);
+    }
 
-    #interval_id;
-    startInterval() { this.#interval_id = setInterval(() => this.#run(), this.getConfig().intervalMs) }
-    stopInterval() { clearInterval(this.#interval_id) } 
+    #timeout_id;
+    startTimeout() { this.#timeout_id = this.#runContainer() }
+    stopTimeout() { clearInterval(this.#timeout_id) } 
 
     constructor() { super(__dirname) }
 
     startFunction() {
         this.#process = true;
-        this.startInterval();
+        this.startTimeout();
     }
 
     stopFunction() {
         this.#process = false;
-        this.stopInterval();
+        this.stopTimeout();
     }
 }
 
