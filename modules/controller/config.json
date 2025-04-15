@@ -1,6 +1,6 @@
 {
-    "intervalMs": 700,
-    "deviationRange": 1000,
+    "intervalMs": 500,
+    "deviationRange": 200,
 
     "actions": {
         "buy": true,
