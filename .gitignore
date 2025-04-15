@@ -1,6 +1,6 @@
 /node_modules
 /modules/logger/logs/*.log
-/modules/markets/markets/*/files
-!/modules/markets/markets/README.md
-/modules/*/files
+/modules/markets/markets/*/files/*
+!/modules/markets/markets/*/files/README.md
+/modules/*/files/*
 !/modules/*/files/README.md
