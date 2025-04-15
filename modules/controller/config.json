@@ -1,6 +1,13 @@
 {
-    "intervalMs": 500,
-    "deviationRange": 200,
+    "intervals": {
+        "getItems": {
+            "ms": 166,
+            "deviationRange": [0, 50]
+        },
+        "initMarkets": {
+            "ms": 36e5
+        }
+    },
 
     "actions": {
         "buy": true,

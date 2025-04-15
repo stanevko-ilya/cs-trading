@@ -8,7 +8,7 @@ class Controller extends Module {
     #ids = [];
 
     #process = false;
-    async #run() {
+    async getItems() {
         if (!this.#process) return false;
         
         const config = this.getConfig();
@@ -69,7 +69,7 @@ class Controller extends Module {
                     if (bought_items.length > 0) await this.#vk.api.messages.send({
                         random_id: 0,
                         chat_id: 1,
-                        message: `Куплены прдеметы (IDs): ${bought_items.map(item => item.id).join(',')}`,
+                        message: `Куплены предметы (IDs): ${bought_items.map(item => item.id).join(',')}`,
                     })
                 }
 
@@ -78,24 +78,42 @@ class Controller extends Module {
             });
         }
     }
-    #runContainer() {
-        const config = this.getConfig();
-        const ms = config.intervalMs + Math.round(Math.random()*config.deviationRange);
-        return setTimeout(() => {
-            this.#runContainer();
-            this.#run();
-        }, ms);
-    }
 
-    #timeout_id;
-    startTimeout() { this.#timeout_id = this.#runContainer() }
-    stopTimeout() { clearInterval(this.#timeout_id) } 
+    async initMarkets() {
+        const markets = modules.markets.getMarkets();
+        for (const name of markets) {
+            const market = modules.markets.getMarket(name);
+            await market.init(false);
+        }
+    }
 
     constructor() { super(__dirname) }
 
+    #timeout_ids = {};
+    startTimeout(key) {
+        if (!this.#process) return false;
+
+        const intervals = this.getConfig().intervals;
+        if (!(key in intervals && typeof(this[key]) == 'function')) return false;
+
+        const interval = intervals[key];
+        const range = Array.isArray(interval.deviationRange) ? interval.deviationRange : null;
+        const ms = interval.ms + Math.round(Math.random()*(range ? range[1] - range[0] + 1 : 0) + (range ? range[0] : 0));
+        const timeout_id = setTimeout(async () => {
+            if (interval.async) await this[key]();
+            else this[key]();
+            this.startTimeout(key);
+        }, ms);
+
+        this.#timeout_ids[key] = timeout_id;
+        return timeout_id;
+    }
+    stopTimeout() { for (const key in this.#timeout_ids) { clearTimeout(this.#timeout_ids[key]) } } 
+
     startFunction() {
         this.#process = true;
-        this.startTimeout();
+        const intervals = this.getConfig().intervals;
+        for (const key in intervals) { this.startTimeout(key) }
     }
 
     stopFunction() {

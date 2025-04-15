@@ -4,6 +4,7 @@ const selenium = require('selenium-webdriver');
 const cf_scraper = require('cloudflare-scraper').default;
 const Market = require('../_class');
 const modules = require('../../../../modules');
+const getIp = require('../../../../functions/getIp');
 
 class CSMoney extends Market {    
     getAuth() {
@@ -29,14 +30,22 @@ class CSMoney extends Market {
 
     /**
      * @param {rp.Options} options Параметры запроса
-     * @param {'none'|'next'} [proxy='none'] Способ установки proxy
+     * @param {Object} param1 Доп. настройки
+     * @param {'none'|'next'} param1.proxy Прокси сервер
+     * @param {'next'|'main'} param1.ip IP запроса
     */
-    async #request(options, proxy='none') {
-        // Не используется
+    async #request(options, { proxy='none', ip='main' }={}) {
+        // WARN: Proxy не используется
         if (false && !('proxy' in options)) {
             let proxy_data = null;
             if (proxy === 'next') proxy_data = await modules.proxy.getNext();
             if (proxy_data) options.proxy = proxy_data;
+        }
+        if (!('localAddress' in options)) {
+            let localAddress_data = null;
+            if (ip === 'next') localAddress_data = await getIp(ip);
+            if (localAddress_data) options.localAddress = localAddress_data;
+            
         }
 
         const url = String(options.url);
@@ -52,13 +61,16 @@ class CSMoney extends Market {
 
         if (!('throwHttpErrors' in options)) options.throwHttpErrors = false;
 
+        let request = null;
         try {
+            request = cf_scraper(url, options)
             const response = 
                 is_json ? 
-                    await cf_scraper(url, options).json()
+                    await request.json()
                 :
-                    (await cf_scraper(url, options)).body
-            ;
+                    (await request).body
+            ;            
+
             if (response.error == 6 || Array.isArray(response?.errors) && response.errors[0]?.code === 6) {                
                 // this.setAuth(null);
                 new Promise(() => this.init());
@@ -169,7 +181,7 @@ class CSMoney extends Market {
                 url: withAuth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses',
                 headers: withAuth ? this.getAuth() : undefined,
                 json: true
-            }, withAuth ? 'none' : 'next');
+            });
             return Boolean(request) && (!withAuth || request.email && request?.error !== 6);
         } catch (e) {
             modules.logger.log('error', `Ошибка при пилинговании сервиса: ${modules.logger.stringError(e)}`);
@@ -269,7 +281,11 @@ class CSMoney extends Market {
 
         const url = `https://cs.money/1.0/market/sell-orders?id=${id}&limit=${limit}&offset=${offset}&minPrice=${(minPrice/rub_usd).toFixed(0)}&maxPrice=${(maxPrice/rub_usd).toFixed(0)}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec%20Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=insertDate`;
         const start = Date.now();
-        const request = await cf_scraper.get(url).json();
+        const request = await this.#request({
+            method: 'GET',
+            url,
+            json: true
+        }, { proxy: 'next', ip: 'next' });
         console.log(`ID: ${id} | Время запроса: ${Date.now() - start}мс | Время метода: ${Date.now() - start_method}мс`);
         
         return request?.items || [];
@@ -346,31 +362,31 @@ class CSMoney extends Market {
         // const items = buyItems;
         if (items.length === 0) return false;
 	
-	let result = false;
+	    let result = false;
         let purchase;
         try {
             purchase = await this.#request({
-		url: 'https://cs.money/1.0/market/purchase',
+		        url: 'https://cs.money/1.0/market/purchase',
                 method: 'POST',
                 headers: auth,
                 body: { items },
-		json: true
+		        json: true
             });
 
             const answer_string = JSON.stringify(purchase);
             const done = purchase && answer_string === '{}';
+            if (done) {
+                this.addBoughtIds(items.map(item => item.id));
+                result = items;
+            }
+
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
                 const index = this.#buying_ids.indexOf(item.id);
                 if (index > -1) this.#buying_ids.splice(index, 1);
             }
-            if (done) {
-		this.addBoughtIds(items.map(item => item.id));
-		result = items;
-	    }
-
             modules.logger.log('info', `${JSON.stringify(items)} покупка: ${answer_string}`);
-	} catch (e) {
+	    } catch (e) {
             modules.logger.log('error', `Ошибка при покупке скинов ${JSON.stringify(items)}: ${modules.logger.stringError(e)}`);
             modules.logger.log('error', `Ответ: ${Object.isObject(purchase) ? JSON.stringify(purchase) : purchase}`);
             return false;
@@ -378,7 +394,7 @@ class CSMoney extends Market {
 
         // await this.getBalance(true);
         // return items;
-	return result;
+	    return result;
     }
     async testBuyItems() {
         /** @type {import('./types/DataItem').default} */

@@ -35,7 +35,7 @@ class Browser extends Module {
         this.#queue.push(request);
         
         if (this.#queue.length > 1) return { result: 'in_process' };
-        else return await this.#process(); 
+        else return await this.#process();
     }
 
     async #process() {

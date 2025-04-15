@@ -63,7 +63,7 @@ class Market {
         this.#name = name;
     }
 
-    async init() { return await this.#loadBoughtIds() && await this.#loadAuth() }
+    async init(super_init) { return await this.#loadBoughtIds() && await this.#loadAuth() }
     async ping(withAuth=false) { }
 
     async getCurrencies(name='RUB') { }
