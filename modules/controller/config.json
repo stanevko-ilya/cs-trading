@@ -1,8 +1,8 @@
 {
     "intervals": {
         "getItems": {
-            "ms": 166,
-            "deviationRange": [0, 50]
+            "ms": 1e4,
+            "deviationRange": [0, 0]
         },
         "initMarkets": {
             "ms": 36e5

@@ -1,80 +1,64 @@
 const cheerio = require('cheerio');
-const rp = require('request-promise');
 const selenium = require('selenium-webdriver');
-const cf_scraper = require('cloudflare-scraper').default;
 const Market = require('../_class');
 const modules = require('../../../../modules');
-const getIp = require('../../../../functions/getIp');
+const generateId = require('../../../../functions/generateId');
+const { ips, getIp } = require('../../../../functions/getIp');
+const asyncDelay = require('../../../../functions/asyncDelay');
+const getRandom = require('../../../../functions/getRandom');
 
-class CSMoney extends Market {    
-    getAuth() {
-        const auth = super.getAuth();
-        if (!auth) return false;
-
-        const cookies = [];
-        for (const key in auth) { cookies.push(`${key}=${auth[key]?.value || ''}`) }
-
-        return { cookie: cookies.filter(item => Boolean(item)).join(';') };
-    }
-
-    validAuth() {
-        const auth = super.getAuth();
-        const now = new Date();
-        for (const key in auth) {            
-            if (new Date(auth[key].expiry*1000) < now)
-                return false;
-        }
-
-        return super.validAuth();
-    }
-
+class CSMoney extends Market {
     /**
-     * @param {rp.Options} options Параметры запроса
+     * @param {{ url: String, json: Boolean } & RequestInit} options Параметры запроса
      * @param {Object} param1 Доп. настройки
      * @param {'none'|'next'} param1.proxy Прокси сервер
      * @param {'next'|'main'} param1.ip IP запроса
     */
     async #request(options, { proxy='none', ip='main' }={}) {
-        // WARN: Proxy не используется
-        if (false && !('proxy' in options)) {
-            let proxy_data = null;
-            if (proxy === 'next') proxy_data = await modules.proxy.getNext();
-            if (proxy_data) options.proxy = proxy_data;
-        }
-        if (!('localAddress' in options)) {
-            let localAddress_data = null;
-            if (ip === 'next') localAddress_data = await getIp(ip);
-            if (localAddress_data) options.localAddress = localAddress_data;
-            
-        }
-
         const url = String(options.url);
         delete options.url;
-
+        
         const is_json = Boolean(options.json);
         delete options.json;
 
-        if ('body' in options && Object.isObject(options.body)) {
-            options.json = Object.clone(options.body);
-            delete options.body;
-        }
-
-        if (!('throwHttpErrors' in options)) options.throwHttpErrors = false;
-
+        /** @type {Response} */
         let request = null;
         try {
-            request = cf_scraper(url, options)
-            const response = 
-                is_json ? 
-                    await request.json()
-                :
-                    (await request).body
-            ;            
+            const driver = modules.browser.getDriver(getIp(ip));
+            if (!driver) return false;
 
-            if (response.error == 6 || Array.isArray(response?.errors) && response.errors[0]?.code === 6) {                
-                // this.setAuth(null);
-                new Promise(() => this.init());
+            const pageUrl = 'https://cs.money';
+            if (!new RegExp(pageUrl).test(await driver.getCurrentUrl())) await driver.get(pageUrl);
+
+            const requestId = await generateId();
+            const requestData = { requestId, url, is_json, options };
+
+            const executeAsyncScript = await driver.executeAsyncScript(async (requestData, callback) => {
+                const request = await fetch(requestData.url, requestData.options);
+                const answer = { requestData };
+                let response;
+
+                try { response = requestData.is_json ? await request.json() : await request.text() }
+                catch(e) {
+                    answer.error = e.message;
+                    response = await request.text();
+                }
+
+                callback({ ...answer, response });
+            }, ...[ requestData ]);
+
+            if (executeAsyncScript.requestData.requestId !== requestId) {
+                modules.logger.log('warn', 'Получен ответ на другой запрос', true);
+                if (executeAsyncScript.requestData.url !== url) return false;
             }
+
+            if (executeAsyncScript.error) {
+                modules.logger.log('error', `Ошибка выполнения запроса: ${response}`, true);
+                return response;
+            }
+
+            const response = executeAsyncScript.response;
+            // TODO: Валидация ответа
             return response;
         } catch (e) {
             modules.logger.log('error', `Ошибка запроса: ${modules.logger.stringError(e)}`);
@@ -84,83 +68,87 @@ class CSMoney extends Market {
     
     constructor(name) { super(__dirname, name) }
 
-    async #initAuth(super_init) {
-        if (super_init) {
-            const super_inited = await super.init();
-            if (super_inited) return true;
-        }
+    async #initAuth() {
+        for (let i = 0; i < ips.list.length; i++) {
+            const ip = ips.list[i];
 
-        const stoped = !modules.browser.isWork();
-        if (stoped) {
-            const started = await modules.browser.start();
-            if (!started) return false;
-        }
-   
-        const request = await modules.browser.addToQueue(async () => {
-            const driver = modules.browser.getDriver();
-            const saveAuth = async () => {
-                try {
-                    await driver.get('https://cs.money');
+            const hasDriver = Boolean(modules.browser.getDriver(ip));
+            if (!hasDriver) await modules.browser.startFunction(ip);
 
-                    const auth = {};
-                    const keys = [ 'steamid', 'support_token', 'csgo_ses', '_uetvid' ];
-                    let done = true;
-                    for (let i = 0; i < keys.length; i++) {
-                        const key = keys[i];
-                        const cookie = await driver.manage().getCookie(key);
+            async function doing() {
+                const driver = modules.browser.getDriver(ip);
+                const checkAuth = async () => {
+                        const url = 'https://cs.money';
+                        await driver.get(url);
 
-                        const value = cookie || null;
-                        if (value === null) {
-                            done = false;
-                            break;
+                        const has_cloudflare = await driver.getTitle() === 'Just a moment...';                        
+                        if (has_cloudflare) {
+                            await asyncDelay(10e3);
+                            
+                            const challenge = await driver.findElement(selenium.By.xpath('/html/body/div[1]/div/div[1]/div/div'));
+                            const rect = await challenge.getRect();
+
+                            const actions = await driver.actions({ async: true });
+                            await actions.move({ x: Math.ceil(rect.x + rect.width/4), y: Math.ceil(rect.y + rect.height/2), duration: getRandom(300, 1000) }).click().perform();
                         }
-                        auth[key] = value;                        
-                    }
 
-                    if (done) return this.setAuth(auth);
-                    // const now = Date.now();
-                    // const cookies = await driver.manage().getCookies();
-                    // const filter_cookies = cookies.filter(cookie => cookie.expiry > now);
-                    // console.log(cookies.length, filter_cookies.length);
+                        const auth = {};
+                        const keys = [ 'steamid', 'support_token', 'csgo_ses', '_uetvid' ];
+                        let done = true;
+                        for (let i = 0; i < keys.length; i++) {
+                            const key = keys[i];
+                            const cookie = await driver.manage().getCookie(key);
+
+                            const value = cookie || null;
+                            if (value === null) {
+                                done = false;
+                                break;
+                            }
+                            auth[key] = value;                        
+                        }
+                        
+                        return Object.keys(auth).length === keys.length;
                     
-                    // return this.setAuth(filter_cookies);
-                } catch(e) {
-                    modules.logger.log('warn', `Ошибка при сохранение данных авторизации: ${modules.logger.stringError(e)}`);
-                    return false;
+                        try {} catch(e) {
+                        modules.logger.log('warn', `Ошибка при сохранение данных авторизации: ${modules.logger.stringError(e)}`);
+                        return false;
+                    }
                 }
-            }
 
-            const try1 = await saveAuth();
-            if (!try1) {
-                const loginButtonMarket = await driver.findElement(selenium.By.xpath('//a[contains(., "Войти через Steam")]'));
-                if (!loginButtonMarket) return false;
-                const link = await loginButtonMarket.getAttribute('href');
-                if (!link) return false;
+                const try1 = await checkAuth();
+                if (!try1) {
+                    const loginButtonMarket = await driver.findElement(selenium.By.xpath('//a[contains(., "Войти через Steam")]'));
+                    if (!loginButtonMarket) return false;
+                    const link = await loginButtonMarket.getAttribute('href');
+                    if (!link) return false;
+                    
+                    await driver.get(link);
+                    const loginButtonSteam = await driver.findElement(selenium.By.id('imageLogin'));
+                    if (!loginButtonSteam) return false;
+                    await loginButtonSteam.click();
+
+                    const try2 = await checkAuth();
+                    if (!try2) return false;
+                }
                 
-                await driver.get(link);
-                const loginButtonSteam = await driver.findElement(selenium.By.id('imageLogin'));
-                if (!loginButtonSteam) return false;
-                await loginButtonSteam.click();
-
-                const try2 = await saveAuth();
-                if (!try2) return false;
+                return true;
             }
-            
-            if (stoped) await modules.browser.stop();
-            return true;
-        });
+    
+            const request = await modules.browser.addToQueue(async () => await doing());
+        }
 
         return request.result === 'completed';
     }
 
     #initing = false
-    async init(super_init=true) {
+    async init(super_init=true) {   
         if (this.#initing) return false;
         this.#initing = true;
 
+        if (super_init) await super.init();
         try {
             const functions = [
-                async () => await this.#initAuth(super_init),
+                async () => await this.#initAuth(),
                 async () => await this.#initCurrencies(),
                 async () => await this.#initBalance()
             ];
@@ -179,7 +167,6 @@ class CSMoney extends Market {
             const request = await this.#request({
                 method: withAuth ? 'POST' : 'GET',
                 url: withAuth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses',
-                headers: withAuth ? this.getAuth() : undefined,
                 json: true
             });
             return Boolean(request) && (!withAuth || request.email && request?.error !== 6);
@@ -203,9 +190,6 @@ class CSMoney extends Market {
     }
 
     async #loadCurrencies() {
-        const auth = this.getAuth();
-        if (!auth) return false;
-
         const request = await this.#request({ url: 'https://cs.money/get_currencies', json: true });
         return request || {};
     }
@@ -229,33 +213,6 @@ class CSMoney extends Market {
         if (!load) return this.#balance;
         return this.#balance; // TODO: После загрузки https://cs.money/ru/market/buy всё блокируется
         
-        if (Date.now() - this.#balance.last_update < 30e3) return false;
-
-        const auth = this.getAuth();        
-        if (!auth) return false;
-
-        const request = await this.#request({ url: 'https://cs.money/ru/market/buy/', headers: auth });
-        if (!request) return false;
-
-        const html = cheerio.load(request);
-        this.#balance.amount = JSON.parse(html('#__app-params').text())?.userInfo?.marketBalance || 0;
-        
-        // const stoped = !modules.browser.isWork();
-        // if (stoped) {
-        //     const started = await modules.browser.start();
-        //     if (!started) return false;
-        // }
-        // const driver = modules.browser.getDriver();
-        // await modules.browser.addToQueue(async () => {
-        //     driver.get('https://cs.money/ru/market/buy/');
-        //     await driver.sleep(10000);
-        //     const answer = await driver.executeScript(`return document.getElementById('__app-params').innerText`);
-        //     this.#balance.amount = JSON.parse(answer)?.userInfo?.marketBalance || 0;
-        //     if (stoped) await modules.browser.stop();
-        // });
-        
-        this.#balance.last_update = Date.now();
-        return this.#balance;
     }
     async #initBalance() {
         const balance = await this.getBalance(true);
@@ -282,7 +239,6 @@ class CSMoney extends Market {
         const url = `https://cs.money/1.0/market/sell-orders?id=${id}&limit=${limit}&offset=${offset}&minPrice=${(minPrice/rub_usd).toFixed(0)}&maxPrice=${(maxPrice/rub_usd).toFixed(0)}&type=2&type=13&type=5&type=6&type=3&type=4&type=7&type=8&isStatTrak=false&hasKeychains=false&isSouvenir=false&rarity=Mil-Spec%20Grade&rarity=Restricted&rarity=Classified&rarity=Covert&order=desc&sort=insertDate`;
         const start = Date.now();
         const request = await this.#request({
-            method: 'GET',
             url,
             json: true
         }, { proxy: 'next', ip: 'next' });
@@ -336,9 +292,6 @@ class CSMoney extends Market {
 
     #buying_ids = [];
     async buyItems(itemsData, converted=false) {
-        const auth = this.getAuth();
-        if (!auth) return false;
-
         /** @type {Array<import('./types/DataItem').default>} */
         const buyItems = converted ? itemsData : await this.convertItems(await this.filterItems(itemsData));
         if (buyItems.length === 0) return false;
@@ -368,7 +321,6 @@ class CSMoney extends Market {
             purchase = await this.#request({
 		        url: 'https://cs.money/1.0/market/purchase',
                 method: 'POST',
-                headers: auth,
                 body: { items },
 		        json: true
             });

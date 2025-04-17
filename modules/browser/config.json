@@ -9,12 +9,11 @@
         "--disable-gpu", 
         "--disable-blink-features=AutomationControlled",
         "--remote-allow-origins=*",
-        "--disable-infobars",
-        "--user-data-dir=/root/snap/chromium/common/chromium/Default"
+        "--disable-infobars"
     ],
     "react": { 
-        "width": 400, 
-        "height": 800,
+        "width": 100, 
+        "height": 500,
         "hide": false
     },
     "DevToolsCommands": [

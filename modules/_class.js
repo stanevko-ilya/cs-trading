@@ -51,7 +51,7 @@ class Module {
     async startFunction() {}
     /** Функция для запуска */
     async start() {
-        await this.startFunction()
+        await this.startFunction();
         
         this.#status = 'on';
         return true;
@@ -61,9 +61,9 @@ class Module {
     async stopFunction() {}
     /** Функция для оставноки */
     async stop() {
-        this.#status = 'off';
-
         await this.stopFunction();
+        
+        this.#status = 'off';
         return true;
     }
 }

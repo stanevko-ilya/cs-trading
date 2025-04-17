@@ -1,5 +1,6 @@
 const vk_io = require('vk-io');
 const asyncDelay = require('../../functions/asyncDelay');
+const getRandom = require('../../functions/getRandom');
 const modules = require('../../modules');
 const Module = require('../_class');
 
@@ -74,7 +75,7 @@ class Controller extends Module {
                 }
 
                 // TODO: Только для одной площадки
-                modules.logger.log('info', `Предметов: ${items.length} | Первые предмет: ${items.slice(0, 10).map(item => item.asset.names.full.split('|')[0].trim()).join(' -> ')}`, true);
+                modules.logger.log('info', `Предметов: ${items.length} | Первые предмет: ${items.slice(0, 10).map(item => item?.asset?.names?.full?.split('|')[0]?.trim()).join(' -> ')}`, true);
             });
         }
     }
@@ -98,7 +99,7 @@ class Controller extends Module {
 
         const interval = intervals[key];
         const range = Array.isArray(interval.deviationRange) ? interval.deviationRange : null;
-        const ms = interval.ms + Math.round(Math.random()*(range ? range[1] - range[0] + 1 : 0) + (range ? range[0] : 0));
+        const ms = interval.ms + (Array.isArray(range) ? getRandom(range[0], range[1]) : 0);
         const timeout_id = setTimeout(async () => {
             if (interval.async) await this[key]();
             else this[key]();
@@ -110,7 +111,7 @@ class Controller extends Module {
     }
     stopTimeout() { for (const key in this.#timeout_ids) { clearTimeout(this.#timeout_ids[key]) } } 
 
-    startFunction() {
+    startFunction() {   
         this.#process = true;
         const intervals = this.getConfig().intervals;
         for (const key in intervals) { this.startTimeout(key) }

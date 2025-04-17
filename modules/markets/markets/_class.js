@@ -8,30 +8,6 @@ class Market {
     
     #name;
     getName() { return this.#name }
-    
-    #save_auth_path;
-    #auth = null;
-    setAuth(auth) {
-        this.#auth = auth;
-        fs.writeFileSync(this.#save_auth_path, JSON.stringify(this.#auth, null, 4));
-        return true;
-    }
-    getAuth() { return this.#auth }
-    async validAuth() {
-        const request = await this.ping(true);
-        if (!request) this.setAuth(null);
-        return request;
-    }
-    async #loadAuth() {
-        this.#save_auth_path = path.join(this.#__dirname, './files/auth.json');
-        if (!fs.existsSync(this.#save_auth_path)) return false;
-        
-        const saved_auth = require(this.#save_auth_path);
-        if (!saved_auth) return false;
-
-        const done = this.setAuth(saved_auth) && await this.validAuth();
-        return done;
-    }
 
     #bought_ids_path = null;
     #bought_ids_limit = 100;
@@ -63,7 +39,7 @@ class Market {
         this.#name = name;
     }
 
-    async init(super_init) { return await this.#loadBoughtIds() && await this.#loadAuth() }
+    async init(super_init) { return await this.#loadBoughtIds() }
     async ping(withAuth=false) { }
 
     async getCurrencies(name='RUB') { }

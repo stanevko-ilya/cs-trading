@@ -3,18 +3,16 @@ const webdriver = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
 const modules = require('../../modules');
 const Module = require('../_class');
+const { ips } = require('../../functions/getIp');
+const { user_agents } = require('../../functions/getUserAgent');
 
 class Browser extends Module {
     /** 
-     * @type {chrome.Driver|null}
+     * @type {Object<string, chrome.Driver>}
      * @description Драйвер для управления браузером
     */
-    #driver = null;
-    getDriver() { return this.#driver }
-
-    /** Флаг, отображающий работу браузера */
-    #driver_working = false;
-    isWork() { return this.#driver_working }
+    #drivers = {};
+    getDriver(ip) { return this.#drivers[ip] || null }
 
     /**
      * @type {[{ func: Function }]}
@@ -55,7 +53,7 @@ class Browser extends Module {
         return { result: 'completed' };
     }
 
-    async startFunction() {
+    async startFunction(ip) {
         const config = this.getConfig();
         const builder = new webdriver.Builder();
         const options = new chrome.Options();
@@ -65,14 +63,19 @@ class Browser extends Module {
         builder.setChromeService(service);
         
         options.addArguments(...config.arguments);
-        builder.setChromeOptions(options);       
+        if (typeof(ip) === 'string') {
+            // options.addArguments(`--user-agent=${user_agents.list[ips.list.indexOf(ip)]}`);
+            options.addArguments(`--user-data-dir=/root/snap/chromium/common/chromium/ip_${ip}`);
+            // options.addArguments(`--user-data-dir=/root/snap/chromium/common/chromium/Default`);
+        }
+        builder.setChromeOptions(options);
         
         try {
-            const driver = await builder.build();
-            this.#driver = driver;            
-
-            this.#driver.manage().setTimeouts({ script: 6e4 });
-            this.#driver.manage().window().setRect({
+            this.#drivers[ip] = await builder.build();
+            const driver = this.#drivers[ip];
+            
+            driver.manage().setTimeouts({ script: 6e4 });
+            driver.manage().window().setRect({
                 width: config.react.width,
                 height: config.react.height,
                 x: config.react.hide ? -config.react.width : 0,
@@ -80,10 +83,10 @@ class Browser extends Module {
             });
             for (let i = 0; i < config.DevToolsCommands.length; i++) {
                 const command = config.DevToolsCommands[i];
-                await this.#driver.sendDevToolsCommand(command.name, command.params);
+                await driver.sendDevToolsCommand(command.name, command.params);
             }
 
-            modules.logger.log('info', 'Система браузера запущена');
+            modules.logger.log('info', `Система браузера запущена | IP: ${ip}`);
 
             if (this.#queue.length > 0) new Promise(() => this.#process());
         } catch (e) {
@@ -92,16 +95,17 @@ class Browser extends Module {
             return false;
         }
         
-        this.#driver_working = true;
         return true;
     }
 
     async stopFunction() {
-        if (this.isWork()) {
-            this.#driver_working = false;
-            await this.#driver.quit();
-            modules.logger.log('info', 'Система браузера остановлена');
+        for (const ip in this.#drivers) {
+            const driver = this.#drivers[ip];
+            await driver.quit();
+            delete this.#drivers[ip];
+            modules.logger.log('info', `Система браузера остановлена | IP: ${ip}`);
         }
+        return true;
     }
 }
 

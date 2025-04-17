@@ -20,4 +20,4 @@ function getUserAgent() {
     user_agents.last = index;
     return user_agents.list[index];
 }
-module.exports = getUserAgent;
+module.exports = { user_agents, getUserAgent };
