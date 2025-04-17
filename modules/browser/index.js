@@ -5,6 +5,10 @@ const modules = require('../../modules');
 const Module = require('../_class');
 
 class Browser extends Module {
+
+    #active_ip = null;
+    getIp() { return this.#active_ip }
+
     /** 
      * @type {chrome.Driver|null}
      * @description Драйвер для управления браузером
@@ -55,6 +59,11 @@ class Browser extends Module {
         return { result: 'completed' };
     }
 
+    async start(ip) {
+        if (typeof(ip) === 'string') this.#active_ip = ip;
+        return await super.start();
+    }
+
     async startFunction() {
         const config = this.getConfig();
         const builder = new webdriver.Builder();
@@ -65,7 +74,11 @@ class Browser extends Module {
         builder.setChromeService(service);
         
         options.addArguments(...config.arguments);
-        builder.setChromeOptions(options);       
+        if (this.#active_ip) {
+            options.addArguments(`--host-resolver-rules="MAP * ${this.#active_ip} , EXCLUDE localhost"`);
+            options.addArguments(`--user-data-dir=/root/snap/chromium/common/chromium/ip_${this.#active_ip}`);
+        } else options.addArguments('--user-data-dir=/root/snap/chromium/common/chromium/Default');
+        builder.setChromeOptions(options);
         
         try {
             const driver = await builder.build();

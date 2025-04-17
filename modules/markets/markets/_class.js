@@ -10,15 +10,22 @@ class Market {
     getName() { return this.#name }
     
     #save_auth_path;
-    #auth = null;
-    setAuth(auth) {
-        this.#auth = auth;
+    /** @type {Array<{ ip: String|undefined, data: Object }>} */
+    #auth = [];
+
+    setAuth(array) {
+        this.#auth = array;
         fs.writeFileSync(this.#save_auth_path, JSON.stringify(this.#auth, null, 4));
         return true;
     }
     getAuth() { return this.#auth }
-    async validAuth() {
-        const request = await this.ping(true);
+    getAuthByIp(ip) {
+        const auth = this.#auth?.find(item => item.ip === ip);
+        return auth || false;
+    }
+
+    async validAuth(auth) {
+        const request = await this.ping({ ip: auth.ip, auth: auth.data });
         if (!request) this.setAuth(null);
         return request;
     }
@@ -29,8 +36,17 @@ class Market {
         const saved_auth = require(this.#save_auth_path);
         if (!saved_auth) return false;
 
-        const done = this.setAuth(saved_auth) && await this.validAuth();
-        return done;
+        if (Array.isArray(saved_auth)) {
+            const set_auth = [];
+            for (let i = 0; i < saved_auth.length; i++) {
+                const auth = saved_auth[i];
+                const done = await this.validAuth(auth);
+                if (done) set_auth.push(auth);
+            }
+            if (set_auth.length > 0) return await this.setAuth(set_auth);
+        }
+        
+        return true;
     }
 
     #bought_ids_path = null;
@@ -64,11 +80,11 @@ class Market {
     }
 
     async init(super_init) { return await this.#loadBoughtIds() && await this.#loadAuth() }
-    async ping(withAuth=false) { }
+    async ping({ ip=undefined, auth=false }={}) { }
 
     async getCurrencies(name='RUB') { }
     async getBalance() { }
-    async getItems({ minPrice=0, maxPrice=1e5, offset=0 }) { }
+    async getItems({ ip=undefined, auth=false, minPrice=0, maxPrice=1e5, offset=0 }) { }
     async filterItems(items) { }
     async buyItems(items) { }
 }

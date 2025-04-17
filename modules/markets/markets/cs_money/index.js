@@ -4,28 +4,30 @@ const selenium = require('selenium-webdriver');
 const cf_scraper = require('cloudflare-scraper').default;
 const Market = require('../_class');
 const modules = require('../../../../modules');
-const getIp = require('../../../../functions/getIp');
+const asyncDelay = require('../../../../functions/asyncDelay');
+const { ips, getIp } = require('../../../../functions/getIp');
 
-class CSMoney extends Market {    
-    getAuth() {
-        const auth = super.getAuth();
-        if (!auth) return false;
-
+class CSMoney extends Market {
+    getCookieFromAuth(data) {
         const cookies = [];
-        for (const key in auth) { cookies.push(`${key}=${auth[key]?.value || ''}`) }
-
-        return { cookie: cookies.filter(item => Boolean(item)).join(';') };
+        for (const key in data) { cookies.push(`${key}=${data[key]?.value || ''}`) }
+        return cookies.filter(item => Boolean(item)).join(';');
     }
 
-    validAuth() {
-        const auth = super.getAuth();
+    getAuth(ip=undefined) {
+        const auth = this.getAuthByIp(ip);        
+        if (!auth) return false;
+        return this.getCookieFromAuth(auth);
+    }
+
+    validAuth(auth) {        
         const now = new Date();
         for (const key in auth) {            
             if (new Date(auth[key].expiry*1000) < now)
                 return false;
         }
 
-        return super.validAuth();
+        return super.validAuth(auth);
     }
 
     /**
@@ -35,6 +37,7 @@ class CSMoney extends Market {
      * @param {'next'|'main'} param1.ip IP запроса
     */
     async #request(options, { proxy='none', ip='main' }={}) {
+        if (!('headers' in options)) options.headers = {};
         // WARN: Proxy не используется
         if (false && !('proxy' in options)) {
             let proxy_data = null;
@@ -42,10 +45,14 @@ class CSMoney extends Market {
             if (proxy_data) options.proxy = proxy_data;
         }
         if (!('localAddress' in options)) {
-            let localAddress_data = null;
-            if (ip === 'next') localAddress_data = await getIp(ip);
-            if (localAddress_data) options.localAddress = localAddress_data;
-            
+            const localAddress_data = await getIp(ip);            
+            if (localAddress_data) {
+                options.localAddress = localAddress_data;
+                if (!('cookie' in options.headers)) {
+                    const auth = this.getAuth(localAddress_data);                    
+                    if (auth) options.headers.cookie = auth;
+                }
+            }
         }
 
         const url = String(options.url);
@@ -90,67 +97,74 @@ class CSMoney extends Market {
             if (super_inited) return true;
         }
 
-        const stoped = !modules.browser.isWork();
-        if (stoped) {
-            const started = await modules.browser.start();
-            if (!started) return false;
-        }
-   
-        const request = await modules.browser.addToQueue(async () => {
-            const driver = modules.browser.getDriver();
-            const saveAuth = async () => {
-                try {
-                    await driver.get('https://cs.money');
+        const auth = super.getAuth();
+        const need_ips = ips.list.filter(ip => auth.findIndex(item => item.ip == ip) === -1);
+        const set_auth = [];
 
-                    const auth = {};
-                    const keys = [ 'steamid', 'support_token', 'csgo_ses', '_uetvid' ];
-                    let done = true;
-                    for (let i = 0; i < keys.length; i++) {
-                        const key = keys[i];
-                        const cookie = await driver.manage().getCookie(key);
+        for (let i = 0; i < need_ips.length; i++) {
+            const ip = need_ips[i];
+            if (modules.browser.getIp() !== ip) await modules.browser.stop();
 
-                        const value = cookie || null;
-                        if (value === null) {
-                            done = false;
-                            break;
+            const stoped = !modules.browser.isWork();
+            if (stoped) {
+                const started = await modules.browser.start(ip);
+                if (!started) return false;
+            }
+       
+            const request = await modules.browser.addToQueue(async () => {
+                const driver = modules.browser.getDriver();
+                const saveAuth = async () => {
+                    try {
+                        await driver.get('https://cs.money');
+                        // await asyncDelay(10000);
+    
+                        const auth = {};
+                        const keys = [ 'steamid', 'support_token', 'csgo_ses', '_uetvid' ];
+                        let done = true;
+                        for (let i = 0; i < keys.length; i++) {
+                            const key = keys[i];
+                            const cookie = await driver.manage().getCookie(key);
+    
+                            const value = cookie || null;
+                            if (value === null) {
+                                done = false;
+                                break;
+                            }
+                            auth[key] = value;                        
                         }
-                        auth[key] = value;                        
+                        
+                        set_auth.push({ ip, data: auth });        
+                        return done;
+                    } catch(e) {
+                        modules.logger.log('warn', `Ошибка при сохранение данных авторизации: ${modules.logger.stringError(e)}`);
+                        return false;
                     }
-
-                    if (done) return this.setAuth(auth);
-                    // const now = Date.now();
-                    // const cookies = await driver.manage().getCookies();
-                    // const filter_cookies = cookies.filter(cookie => cookie.expiry > now);
-                    // console.log(cookies.length, filter_cookies.length);
-                    
-                    // return this.setAuth(filter_cookies);
-                } catch(e) {
-                    modules.logger.log('warn', `Ошибка при сохранение данных авторизации: ${modules.logger.stringError(e)}`);
-                    return false;
                 }
-            }
-
-            const try1 = await saveAuth();
-            if (!try1) {
-                const loginButtonMarket = await driver.findElement(selenium.By.xpath('//a[contains(., "Войти через Steam")]'));
-                if (!loginButtonMarket) return false;
-                const link = await loginButtonMarket.getAttribute('href');
-                if (!link) return false;
+    
+                const try1 = await saveAuth();
+                if (!try1) {
+                    const loginButtonMarket = await driver.findElement(selenium.By.xpath('//a[contains(., "Войти через Steam")]'));
+                    if (!loginButtonMarket) return false;
+                    const link = await loginButtonMarket.getAttribute('href');
+                    if (!link) return false;
+                    
+                    await driver.get(link);
+                    const loginButtonSteam = await driver.findElement(selenium.By.id('imageLogin'));
+                    if (!loginButtonSteam) return false;
+                    await loginButtonSteam.click();
+    
+                    const try2 = await saveAuth();
+                    if (!try2) return false;
+                }
                 
-                await driver.get(link);
-                const loginButtonSteam = await driver.findElement(selenium.By.id('imageLogin'));
-                if (!loginButtonSteam) return false;
-                await loginButtonSteam.click();
+                if (stoped) await modules.browser.stop();
+                return true;
+            });
+            if (request.result === 'completed') modules.logger.log('info', `Инициализирован IP: ${ip}`);
+        }
 
-                const try2 = await saveAuth();
-                if (!try2) return false;
-            }
-            
-            if (stoped) await modules.browser.stop();
-            return true;
-        });
-
-        return request.result === 'completed';
+        if (set_auth.length > 0) return await this.setAuth(set_auth);
+        return true;
     }
 
     #initing = false
@@ -174,15 +188,16 @@ class CSMoney extends Market {
         
         return true;
     }
-    async ping(withAuth=false) {
+    async ping({ ip, auth }) {        
         try {
             const request = await this.#request({
-                method: withAuth ? 'POST' : 'GET',
-                url: withAuth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses',
-                headers: withAuth ? this.getAuth() : undefined,
-                json: true
+                method: auth ? 'POST' : 'GET',
+                url: auth ? 'https://cs.money/get_user_data' : 'https://cs.money/work_statuses',
+                json: true,
+                localAddress: ip,
+                headers: { cookie: this.getCookieFromAuth(auth) }
             });
-            return Boolean(request) && (!withAuth || request.email && request?.error !== 6);
+            return Boolean(request) && (!auth || request.email && request?.error !== 6);
         } catch (e) {
             modules.logger.log('error', `Ошибка при пилинговании сервиса: ${modules.logger.stringError(e)}`);
             return false;
@@ -368,7 +383,6 @@ class CSMoney extends Market {
             purchase = await this.#request({
 		        url: 'https://cs.money/1.0/market/purchase',
                 method: 'POST',
-                headers: auth,
                 body: { items },
 		        json: true
             });

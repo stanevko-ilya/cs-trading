@@ -4,7 +4,7 @@
     "description": "",
     "main": "index.js",
     "scripts": {
-        "browser": "chromium-browser --no-sandbox --disable-setuid-sandbox --remote-debugging-port=9222 --disable-dev-shm-using --disable-extensions --disable-gpu --disable-blink-features=AutomationControlled --remote-allow-origins=* --disable-infobars --user-data-dir=/root/snap/chromium/common/chromium/Default",
+        "browser": "node browser_starter",
         "test": "node index.js",
         "start": "pm2 start --name=cs-trading index.js",
         "stop": "pm2 stop cs-trading",
@@ -14,6 +14,7 @@
     "license": "ISC",
     "dependencies": {
         "cheerio": "^1.0.0",
+        "cli-select": "^1.1.2",
         "cloudflare-scraper": "^2.0.0",
         "ora": "5.0.0",
         "pm2": "^6.0.5",
